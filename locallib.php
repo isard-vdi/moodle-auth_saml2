@@ -22,8 +22,6 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-use auth_saml2\event\cert_regenerated;
-
 defined('MOODLE_INTERNAL') || die();
 
 // @codingStandardsIgnoreStart
@@ -63,13 +61,17 @@ function auth_saml2_get_sp_metadata() {
 
     $slosvcdefault = array(
         SAML2\Constants::BINDING_HTTP_REDIRECT,
-        // SAML2\Constants::BINDING_SOAP, // TODO untested.
+        SAML2\Constants::BINDING_SOAP,
     );
 
     $slob = $spconfig->getArray('SingleLogoutServiceBinding', $slosvcdefault);
     $slol = "$CFG->wwwroot/auth/saml2/sp/saml2-logout.php/{$sourceId}";
 
     foreach ($slob as $binding) {
+        if ($binding == SAML2\Constants::BINDING_SOAP && !($store instanceof SimpleSAML_Store_SQL)) {
+            /* We cannot properly support SOAP logout. */
+            continue;
+        }
         $metaArray20['SingleLogoutService'][] = array(
             'Binding' => $binding,
             'Location' => $slol,
@@ -269,23 +271,10 @@ function auth_saml2_get_sp_metadata() {
     /* Sign the metadata if enabled. */
     $xml = SimpleSAML_Metadata_Signer::sign($xml, $spconfig->toArray(), 'SAML 2 SP');
 
-    // Store the file so it is exactly the same next time.
+    // Store the file so it is exactly thegetLocalizedString same next time.
     file_put_contents($file, $xml);
 
     return $xml;
-}
-
-/**
- * Used for adminlib::set_updatedcallback which requires a string that resolves to a function.
- *
- * Refreshes the sp metadata as some metadata has been updated.
- *
- */
-function auth_saml2_update_sp_metadata() {
-    global $saml2auth;
-
-    $file = $saml2auth->get_file_sp_metadata_file();
-    @unlink($file);
 }
 
 /**
@@ -450,7 +439,7 @@ function auth_saml2_get_idps($active = false, $asarray = false) {
         } else {
             $idpentities[$idpentity->metadataurl][$md5entityid] = $idpentity;
         }
-
+        
     }
 
     return $idpentities;
@@ -473,75 +462,36 @@ function auth_saml2_get_default_idp() {
     return $defaultidp;
 }
 
-/**
- * This helper function processes the regenerate form.
- * Moved here so we can use it in a unit test.
- *
- * @param $fromform
- * @return void|string
- */
-function auth_saml2_process_regenerate_form($fromform) {
-    global $CFG, $USER;
-    $dn = array(
-        'commonName' => substr($fromform->commonname, 0, 64),
-        'countryName' => $fromform->countryname,
-        'emailAddress' => $fromform->email,
-        'localityName' => $fromform->localityname,
-        'organizationName' => $fromform->organizationname,
-        'stateOrProvinceName' => $fromform->stateorprovincename,
-        'organizationalUnitName' => $fromform->organizationalunitname,
-    );
-    $numberofdays = $fromform->expirydays;
-
-    $saml2auth = new \auth_plugin_saml2();
-    $error = create_certificates($saml2auth, $dn, $numberofdays);
-
-    if (!$error) {
-        // Successfully regenerated cert so emit the cert_regenerated event.
-        $eventdata = [
-            'reason' => "regenerated in saml settings page",
-            'userid' => $USER->id,
-        ];
-        cert_regenerated::create(['other' => $eventdata])->trigger();
-    }
-
-    // Also refresh the SP metadata as well.
-    $file = $saml2auth->get_file_sp_metadata_file();
-    @unlink($file);
-
-    if ($error) {
-        return $error;
-    }
-}
 // @codingStandardsIgnoreEnd
 
 /**
- * Common shared admin nav
- */
-function auth_saml2_admin_nav($title, $url) {
-    global $PAGE, $SITE;
+* Sync roles for this user - usually creator
+*
+* @param $user object user object (without system magic quotes)
+*/
+function sync_roles($user,$attributes,$config) {
+    global $CFG, $DB;
 
-    require_login();
-    require_capability('moodle/site:config', context_system::instance());
+    // Process siteadmin (special, they are stored at mdl_config)
+    if(in_array($config->saml_role_siteadmin_map,$attributes['Role'])){
+        $siteadmins = explode(',', $CFG->siteadmins);
+        if (!in_array($user->id, $siteadmins)) {
+            $siteadmins[] = $user->id;
+            $newAdmins = implode(',', $siteadmins);
+            set_config('siteadmins', $newAdmins);
+        }
+    }
 
-    $PAGE->set_context(context_system::instance());
-    $PAGE->set_url($url);
-    $PAGE->set_course($SITE);
-
-    $PAGE->navbar->add(get_string('administrationsite'),
-            new moodle_url('/admin/search.php'));
-
-    $PAGE->navbar->add(get_string('plugins', 'admin'));
-
-    $PAGE->navbar->add(get_string('authentication', 'admin'),
-            new moodle_url('/admin/settings.php?section=manageauths'));
-
-    $PAGE->navbar->add(get_string('pluginname', 'auth_saml2'),
-            new moodle_url('/admin/settings.php', array('section' => 'authsettingsaml2')));
-
-    $PAGE->navbar->add($title, new moodle_url($url));
-
-    $PAGE->set_heading(get_string('pluginname', 'auth_saml2') . ': ' . $title);
-    $PAGE->set_title(get_string('pluginname', 'auth_saml2') . ': ' . $title);
+    // Process coursecreator and manager
+    $syscontext = context_system::instance();
+    if(in_array($config->saml_role_coursecreator_map,$attributes['Role'])){
+        $creatorrole = $DB->get_record('role', array('shortname'=>'coursecreator'), '*', MUST_EXIST);
+        role_assign($creatorrole->id, $user->id, $syscontext);
+    }
+    if (in_array($config->saml_role_manager_map, $attributes['Role'])) {
+        $managerrole = $DB->get_record('role', array('shortname'=>'manager'), '*', MUST_EXIST);
+        role_assign($managerrole->id, $user->id, $syscontext);
+    }
 }
+
 

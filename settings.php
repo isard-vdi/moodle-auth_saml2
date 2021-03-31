@@ -110,14 +110,12 @@ if ($ADMIN->fulltree) {
         'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
         'urn:oasis:names:tc:SAML:2.0:nameid-format:transient',
     ];
-    $nameidpolicy = new admin_setting_configselect(
+    $settings->add(new admin_setting_configselect(
         'auth_saml2/nameidpolicy',
         get_string('nameidpolicy', 'auth_saml2'),
         get_string('nameidpolicy_help', 'auth_saml2'),
         'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
-        array_combine($nameidlist, $nameidlist));
-    $nameidpolicy->set_updatedcallback('auth_saml2_update_sp_metadata');
-    $settings->add($nameidpolicy);
+        array_combine($nameidlist, $nameidlist)));
 
     // Add NameID as attribute.
     $settings->add(new admin_setting_configselect(
@@ -236,13 +234,29 @@ if ($ADMIN->fulltree) {
             get_string('autocreate_help', 'auth_saml2'),
             0, $yesno));
 
-    // Group access rules.
-    $settings->add(new admin_setting_configtextarea(
-        'auth_saml2/grouprules',
-        get_string('grouprules', 'auth_saml2'),
-        get_string('grouprules_help', 'auth_saml2'),
-        '',
-        PARAM_TEXT));
+    // Attribute name that contains groups
+    $settings->add(new admin_setting_configtext(
+            'auth_saml2/groupattr',
+            get_string('groupattr', 'auth_saml2'),
+            get_string('groupattr_help', 'auth_saml2'),
+            '',
+            PARAM_TEXT));
+
+    // Restricted groups
+    $settings->add(new admin_setting_configtext(
+            'auth_saml2/restricted_groups',
+            get_string('restricted_groups', 'auth_saml2'),
+            get_string('restricted_groups_help', 'auth_saml2'),
+            'employee',
+            PARAM_TEXT));
+
+    // Allowed groups
+    $settings->add(new admin_setting_configtext(
+            'auth_saml2/allowed_groups',
+            get_string('allowed_groups', 'auth_saml2'),
+            get_string('allowed_groups_help', 'auth_saml2'),
+            'student',
+            PARAM_TEXT));
 
     // Alternative Logout URL.
     $settings->add(new admin_setting_configtext(
@@ -280,6 +294,43 @@ if ($ADMIN->fulltree) {
             $authplugin->get_ssp_version()
             ));
 
+    //add role mapping
+    $name = 'auth_saml2/field_map_role';
+    $title = get_string('saml_role_map', 'auth_saml2');
+    $description = '';
+    $default = '';
+    $setting = new admin_setting_configtext($name, $title, $description, $default, PARAM_ALPHANUMEXT);
+    $settings->add($setting);
+
+    /* Role Mapping */
+    $settings->add(
+        new admin_setting_heading(
+            'auth_saml2/saml_rolemapping',
+            new lang_string('saml_rolemapping', 'auth_saml2'),
+            new lang_string('saml_rolemapping_head', 'auth_saml2')
+        )
+    );
+
+    $name = 'auth_saml2/saml_role_siteadmin_map';
+    $title = get_string('saml_role_siteadmin_map', 'auth_saml2');
+    $description = '';
+    $default = '';
+    $setting = new admin_setting_configtext($name, $title, $description, $default, PARAM_ALPHANUMEXT);
+    $settings->add($setting);
+
+    $name = 'auth_saml2/saml_role_coursecreator_map';
+    $title = get_string('saml_role_coursecreator_map', 'auth_saml2');
+    $description = '';
+    $default = '';
+    $setting = new admin_setting_configtext($name, $title, $description, $default, PARAM_ALPHANUMEXT);
+    $settings->add($setting);
+
+    $name = 'auth_saml2/saml_role_manager_map';
+    $title = get_string('saml_role_manager_map', 'auth_saml2');
+    $description = '';
+    $default = '';
+    $setting = new admin_setting_configtext($name, $title, $description, $default, PARAM_ALPHANUMEXT);
+    $settings->add($setting);
 
     // Display locking / mapping of profile fields.
     $help = get_string('auth_updatelocal_expl', 'auth');
